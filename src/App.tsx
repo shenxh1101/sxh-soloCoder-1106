@@ -9,6 +9,7 @@ import { ControlPanel } from './components/ControlPanel'
 import { WindCompass } from './components/WindCompass'
 import { StatusBar } from './components/StatusBar'
 import { FaultPanel } from './components/FaultPanel'
+import { ReplayControls } from './components/ReplayControls'
 import { SimulationRunner } from './components/SimulationRunner'
 
 export default function App() {
@@ -43,6 +44,7 @@ export default function App() {
       <WindCompass />
       <FaultPanel />
       <StatusBar />
+      <ReplayControls />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { PowerDataPoint } from '../types/turbine'
 
-export function exportCSV(data: PowerDataPoint[]): void {
+export function exportCSV(data: PowerDataPoint[], label: string): void {
   const header = 'Timestamp,WindSpeed(m/s),PowerOutput(kW),RotorSpeed(RPM)'
   const rows = data.map((point) => {
     const time = new Date(point.timestamp).toISOString()
@@ -11,7 +11,7 @@ export function exportCSV(data: PowerDataPoint[]): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `wind_turbine_data_${Date.now()}.csv`
+  link.download = `wind_turbine_${label}_${Date.now()}.csv`
   link.click()
   URL.revokeObjectURL(url)
 }

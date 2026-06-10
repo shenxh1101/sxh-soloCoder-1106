@@ -9,6 +9,9 @@ export interface TurbineState {
   isBrakeEngaged: boolean
   isStormMode: boolean
   isNacelleView: boolean
+  isAutoProtected: boolean
+  isMaintenance: boolean
+  isReplaying: boolean
 }
 
 export interface PowerDataPoint {
@@ -16,14 +19,44 @@ export interface PowerDataPoint {
   windSpeed: number
   powerOutput: number
   rotorSpeed: number
+  isBrakeEngaged: boolean
+  isStormMode: boolean
 }
+
+export type TurbineEventType =
+  | 'brake'
+  | 'brake_release'
+  | 'storm_on'
+  | 'storm_off'
+  | 'auto_shutdown'
+  | 'overwind_warning'
+  | 'manual_reset'
+  | 'maintenance_on'
+  | 'maintenance_off'
+  | 'replay_start'
+  | 'replay_end'
 
 export interface TurbineEvent {
   id: number
   timestamp: number
-  type: 'brake' | 'brake_release' | 'storm_on' | 'storm_off' | 'auto_shutdown' | 'manual_reset' | 'overwind_warning'
+  type: TurbineEventType
   message: string
 }
+
+export type AlertLevel = 'warning' | 'critical' | 'shutdown'
+
+export interface Alert {
+  id: number
+  type: TurbineEventType
+  level: AlertLevel
+  message: string
+  startTime: number
+  endTime: number | null
+  acknowledged: boolean
+  active: boolean
+}
+
+export type CSVTimeRange = '2min' | '10min' | 'custom'
 
 export const WIND_SPEED_MIN = 0
 export const WIND_SPEED_MAX = 25
@@ -41,6 +74,9 @@ export const CHART_WINDOW_SECONDS = 120
 export const CHART_SAMPLE_INTERVAL = 2
 export const CSV_SAMPLE_INTERVAL = 1
 export const CSV_WINDOW_SECONDS = 600
+
+export const REPLAY_BUFFER_SECONDS = 600
+export const REPLAY_SAMPLE_INTERVAL = 1
 
 export const OVERWIND_THRESHOLD = 22
 export const OVERWIND_DURATION = 2

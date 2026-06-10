@@ -1,43 +1,45 @@
-import { ShieldAlert, RotateCcw, Clock } from 'lucide-react'
+import { ShieldAlert, RotateCcw, Clock, CheckCheck, Trash2 } from 'lucide-react'
 import { useTurbineStore } from '../store/useTurbineStore'
 
+const levelColors: Record<string, string> = {
+  warning: '#ff6d00',
+  critical: '#ff4444',
+  shutdown: '#ff1744',
+}
+
+const levelLabels: Record<string, string> = {
+  warning: '警告',
+  critical: '严重',
+  shutdown: '停机',
+}
+
 export function FaultPanel() {
+  const alerts = useTurbineStore((s) => s.alerts)
   const events = useTurbineStore((s) => s.events)
   const isAutoProtected = useTurbineStore((s) => s.isAutoProtected)
   const isBrakeEngaged = useTurbineStore((s) => s.isBrakeEngaged)
   const windSpeed = useTurbineStore((s) => s.windSpeed)
   const manualReset = useTurbineStore((s) => s.manualReset)
+  const acknowledgeAlert = useTurbineStore((s) => s.acknowledgeAlert)
+  const clearAcknowledgedAlerts = useTurbineStore((s) => s.clearAcknowledgedAlerts)
 
   const formatTime = (ts: number) => {
     const d = new Date(ts)
     return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
   }
 
-  const eventClass = (type: string) => {
-    switch (type) {
-      case 'auto_shutdown':
-      case 'overwind_warning':
-        return 'event-danger'
-      case 'brake':
-      case 'brake_release':
-        return 'event-warn'
-      case 'storm_on':
-      case 'storm_off':
-        return 'event-storm'
-      case 'manual_reset':
-        return 'event-reset'
-      default:
-        return ''
-    }
-  }
+  const activeCount = alerts.filter((a) => a.active).length
+  const unacknowledgedActive = alerts.filter((a) => a.active && !a.acknowledged).length
 
   return (
     <div className="fault-panel">
       <div className="fault-header">
         <ShieldAlert size={16} />
         <span>保护与故障</span>
-        {isAutoProtected && (
-          <span className="fault-badge">保护中</span>
+        {activeCount > 0 && (
+          <span className={`fault-badge ${unacknowledgedActive > 0 ? 'fault-badge-pulse' : ''}`}>
+            {activeCount} 活跃
+          </span>
         )}
       </div>
 
@@ -45,7 +47,7 @@ export function FaultPanel() {
         <div className="fault-alert">
           <div className="fault-alert-title">过风速保护已触发</div>
           <div className="fault-alert-desc">
-            当前风速 {windSpeed.toFixed(1)} m/s，已超过 {22} m/s 阈值，转子已自动锁定。
+            当前风速 {windSpeed.toFixed(1)} m/s，已超过 22 m/s 阈值，转子已自动锁定。
           </div>
           <button className="reset-btn-primary" onClick={manualReset}>
             <RotateCcw size={14} />
@@ -54,19 +56,68 @@ export function FaultPanel() {
         </div>
       )}
 
-      <div className="fault-event-log">
-        <div className="event-log-title">
+      <div className="alert-section">
+        <div className="alert-section-header">
           <Clock size={12} />
-          <span>事件记录</span>
+          <span>告警列表</span>
+          <div className="alert-actions">
+            <button
+              className="alert-action-btn"
+              onClick={() => clearAcknowledgedAlerts()}
+              title="清除已确认"
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
         </div>
-        <div className="event-list">
-          {events.length === 0 && (
-            <div className="event-empty">暂无事件记录</div>
+
+        <div className="alert-list">
+          {alerts.length === 0 && (
+            <div className="event-empty">暂无告警记录</div>
           )}
-          {events.slice(0, 20).map((ev) => (
-            <div key={ev.id} className={`event-item ${eventClass(ev.type)}`}>
-              <span className="event-time">{formatTime(ev.timestamp)}</span>
-              <span className="event-msg">{ev.message}</span>
+          {alerts.slice(0, 20).map((alert) => (
+            <div
+              key={alert.id}
+              className={`alert-item ${alert.active ? 'alert-active' : ''} ${alert.acknowledged ? 'alert-ack' : ''}`}
+            >
+              <div className="alert-row">
+                <span
+                  className="alert-level-badge"
+                  style={{ background: levelColors[alert.level] || '#888' }}
+                >
+                  {levelLabels[alert.level] || alert.level}
+                </span>
+                <span className="alert-start-time">
+                  {formatTime(alert.startTime)}
+                </span>
+                {alert.active && <span className="alert-ongoing">进行中</span>}
+                {alert.endTime && !alert.active && (
+                  <span className="alert-resolved">已恢复</span>
+                )}
+              </div>
+              <div className="alert-row alert-msg-row">
+                <span className="alert-message">{alert.message}</span>
+              </div>
+              {alert.active && !alert.acknowledged && (
+                <button
+                  className="alert-ack-btn"
+                  onClick={() => acknowledgeAlert(alert.id)}
+                >
+                  <CheckCheck size={10} />
+                  <span>确认</span>
+                </button>
+              )}
+              {alert.acknowledged && (
+                <span className="alert-ack-text">已确认</span>
+              )}
+              {alert.endTime && (
+                <div className="alert-duration-row">
+                  <span className="alert-end-time">{formatTime(alert.endTime)}</span>
+                  <span className="alert-duration">
+                    持续 {((alert.endTime - alert.startTime) / 1000).toFixed(0)}s
+                  </span>
+                </div>
+              )}
             </div>
           ))}
         </div>

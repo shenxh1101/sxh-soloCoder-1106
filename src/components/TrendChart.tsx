@@ -9,19 +9,34 @@ function buildSvgPath(
   chartW: number,
   chartH: number,
   timeMin: number,
-  timeRange: number
+  timeRange: number,
+  padLeft: number,
+  padTop: number,
+  plotH: number
 ): string {
   if (data.length < 2) return ''
-  const xScale = (ts: number) => ((ts - timeMin) / timeRange) * chartW
-  const yScale = (v: number) => chartH - (v / maxY) * chartH
+  const xScale = (ts: number) => padLeft + ((ts - timeMin) / timeRange) * (chartW - padLeft - 20)
+  const yScale = (v: number) => padTop + plotH - (v / maxY) * plotH
   const points = data.map(
     (p) => `${xScale(p.timestamp)},${yScale(p[key])}`
   )
   return `M${points.join(' L')}`
 }
 
-function buildFillPath(path: string, chartH: number, chartW: number): string {
-  return `${path} L${chartW},${chartH} L0,${chartH} Z`
+function zeroLinePath(
+  data: PowerDataPoint[],
+  chartW: number,
+  chartH: number,
+  timeMin: number,
+  timeRange: number,
+  padLeft: number,
+  padTop: number,
+  plotH: number
+): string {
+  if (data.length < 2) return ''
+  const xScale = (ts: number) => padLeft + ((ts - timeMin) / timeRange) * (chartW - padLeft - 20)
+  const y0 = padTop + plotH
+  return `M${xScale(data[0].timestamp)},${y0} L${xScale(data[data.length - 1].timestamp)},${y0}`
 }
 
 export function TrendChart() {
@@ -29,50 +44,100 @@ export function TrendChart() {
   const powerOutput = useTurbineStore((s) => s.powerOutput)
   const windSpeed = useTurbineStore((s) => s.windSpeed)
   const isBrakeEngaged = useTurbineStore((s) => s.isBrakeEngaged)
+  const isReplaying = useTurbineStore((s) => s.isReplaying)
+  const replayIndex = useTurbineStore((s) => s.replayIndex)
+  const replayData = useTurbineStore((s) => s.replayData)
 
-  const chartW = 280
-  const chartH = 100
-  const pad = { top: 8, right: 8, bottom: 16, left: 8 }
+  const chartW = 300
+  const chartH = 120
+  const pad = { top: 10, right: 20, bottom: 20, left: 35 }
   const plotW = chartW - pad.left - pad.right
   const plotH = chartH - pad.top - pad.bottom
 
-  const { powerPath, powerFill, windPath, windFill, yLabels, xLabels } = useMemo(() => {
-    if (chartData.length < 2) {
-      return { powerPath: '', powerFill: '', windPath: '', windFill: '', yLabels: [], xLabels: [] }
+  const displayData = isReplaying
+    ? replayData.slice(0, Math.floor(replayIndex) + 1)
+    : chartData
+
+  const { powerPath, windPath, zeroLine, yLabels, brakeRects } = useMemo(() => {
+    if (displayData.length < 2) {
+      return { powerPath: '', windPath: '', zeroLine: '', yLabels: [] as { y: number; label: string }[], brakeRects: [] as { x: number; w: number }[] }
     }
 
     const now = Date.now()
     const timeRange = 120 * 1000
-    const timeMin = now - timeRange
+    const timeMin = isReplaying
+      ? displayData[0].timestamp
+      : now - timeRange
 
     const powerMax = 3000
     const windMax = 30
 
-    const powerPath = buildSvgPath(chartData, 'powerOutput', powerMax, plotW, plotH, timeMin, timeRange)
-    const powerFill = buildFillPath(powerPath, plotH, plotW)
-    const windPath = buildSvgPath(chartData, 'windSpeed', windMax, plotW, plotH, timeMin, timeRange)
-    const windFill = buildFillPath(windPath, plotH, plotW)
+    const powerPath = buildSvgPath(
+      displayData,
+      'powerOutput',
+      powerMax,
+      chartW,
+      chartH,
+      timeMin,
+      timeRange,
+      pad.left,
+      pad.top,
+      plotH
+    )
+    const windPath = buildSvgPath(
+      displayData,
+      'windSpeed',
+      windMax,
+      chartW,
+      chartH,
+      timeMin,
+      timeRange,
+      pad.left,
+      pad.top,
+      plotH
+    )
+
+    const zl = isBrakeEngaged
+      ? zeroLinePath(displayData, chartW, chartH, timeMin, timeRange, pad.left, pad.top, plotH)
+      : ''
 
     const yLabels = [
       { y: pad.top, label: '2500' },
-      { y: pad.top + plotH / 2, label: '1250' },
+      { y: pad.top + plotH * 0.5, label: '1250' },
       { y: pad.top + plotH, label: '0' },
     ]
 
-    const totalSeconds = 120
-    const xLabels = [
-      { x: pad.left, label: '-120s' },
-      { x: pad.left + plotW / 2, label: '-60s' },
-      { x: pad.left + plotW, label: 'now' },
-    ]
+    const xScale = (ts: number) => pad.left + ((ts - timeMin) / timeRange) * plotW
+    const brakeRects: { x: number; w: number }[] = []
+    let brakeStart = -1
+    for (let i = 0; i < displayData.length; i++) {
+      if (displayData[i].isBrakeEngaged && brakeStart < 0) {
+        brakeStart = displayData[i].timestamp
+      } else if (!displayData[i].isBrakeEngaged && brakeStart >= 0) {
+        brakeRects.push({
+          x: xScale(brakeStart),
+          w: xScale(displayData[i].timestamp) - xScale(brakeStart),
+        })
+        brakeStart = -1
+      }
+    }
+    if (brakeStart >= 0) {
+      const endTs = displayData[displayData.length - 1].timestamp
+      brakeRects.push({
+        x: xScale(brakeStart),
+        w: xScale(endTs) - xScale(brakeStart),
+      })
+    }
 
-    return { powerPath, powerFill, windPath, windFill, yLabels, xLabels }
-  }, [chartData])
+    return { powerPath, windPath, zeroLine: zl, yLabels, brakeRects }
+  }, [displayData, isBrakeEngaged, isReplaying])
 
   return (
     <div className="trend-chart-card">
       <div className="trend-chart-header">
-        <span className="trend-chart-title">实时趋势 · 最近2分钟</span>
+        <span className="trend-chart-title">
+          {isReplaying ? '⏪ 历史回放 · 2分钟' : '实时趋势 · 最近2分钟'}
+        </span>
         <div className="trend-chart-legend">
           <span className="legend-line power-legend">
             <span className="legend-dot-line" style={{ background: '#00e5ff' }} />
@@ -92,11 +157,15 @@ export function TrendChart() {
               y1={yl.y}
               x2={pad.left + plotW}
               y2={yl.y}
-              stroke="rgba(255,255,255,0.06)"
-              strokeWidth="1"
+              stroke={
+                i === yLabels.length - 1
+                  ? 'rgba(255,255,255,0.12)'
+                  : 'rgba(255,255,255,0.05)'
+              }
+              strokeWidth={i === yLabels.length - 1 ? '1' : '0.5'}
             />
             <text
-              x={pad.left - 2}
+              x={pad.left - 4}
               y={yl.y + 3}
               textAnchor="end"
               className="chart-axis-label"
@@ -106,55 +175,41 @@ export function TrendChart() {
           </g>
         ))}
 
-        {xLabels.map((xl, i) => (
-          <text
-            key={`xg-${i}`}
-            x={xl.x}
-            y={chartH - 2}
-            textAnchor="middle"
-            className="chart-axis-label"
-          >
-            {xl.label}
-          </text>
-        ))}
+        <text
+          x={pad.left + plotW / 2}
+          y={chartH - 2}
+          textAnchor="middle"
+          className="chart-axis-label"
+        >
+          -120s
+        </text>
+        <text
+          x={pad.left + plotW}
+          y={chartH - 2}
+          textAnchor="end"
+          className="chart-axis-label"
+        >
+          now
+        </text>
 
-        <clipPath id="plotClip">
-          <rect x={pad.left} y={pad.top} width={plotW} height={plotH} />
+        <clipPath id="plotClip2">
+          <rect x={pad.left - 2} y={pad.top - 2} width={plotW + 4} height={plotH + 4} />
         </clipPath>
 
-        {powerFill && (
-          <g clipPath="url(#plotClip)">
-            <path
-              d={powerFill}
-              fill="url(#powerGrad)"
-              opacity="0.15"
+        {brakeRects.map((br, i) => (
+          <g clipPath="url(#plotClip2)" key={`br-${i}`}>
+            <rect
+              x={br.x}
+              y={pad.top}
+              width={Math.max(br.w, 2)}
+              height={plotH}
+              fill="rgba(255,68,68,0.06)"
             />
           </g>
-        )}
-        {powerPath && (
-          <g clipPath="url(#plotClip)">
-            <path
-              d={powerPath}
-              fill="none"
-              stroke="#00e5ff"
-              strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-              className="chart-line"
-            />
-          </g>
-        )}
+        ))}
 
-        {windFill && (
-          <g clipPath="url(#plotClip)">
-            <path
-              d={windFill}
-              fill="url(#windGrad)"
-              opacity="0.08"
-            />
-          </g>
-        )}
         {windPath && (
-          <g clipPath="url(#plotClip)">
+          <g clipPath="url(#plotClip2)">
             <path
               d={windPath}
               fill="none"
@@ -167,46 +222,52 @@ export function TrendChart() {
           </g>
         )}
 
+        {powerPath && (
+          <g clipPath="url(#plotClip2)">
+            <path
+              d={powerPath}
+              fill="none"
+              stroke="#00e5ff"
+              strokeWidth="1.8"
+              vectorEffect="non-scaling-stroke"
+              className="chart-line"
+            />
+            <path
+              d={`${powerPath} L${pad.left + plotW},${pad.top + plotH} L${pad.left},${pad.top + plotH} Z`}
+              fill="url(#powerGrad2)"
+              opacity="0.12"
+            />
+          </g>
+        )}
+
+        {zeroLine && (
+          <g clipPath="url(#plotClip2)">
+            <path
+              d={zeroLine}
+              fill="none"
+              stroke="rgba(0,229,255,0.3)"
+              strokeWidth="0.5"
+            />
+          </g>
+        )}
+
         <defs>
-          <linearGradient id="powerGrad" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="powerGrad2" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.05" />
-          </linearGradient>
-          <linearGradient id="windGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ff6d00" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#ff6d00" stopOpacity="0.02" />
+            <stop offset="100%" stopColor="#00e5ff" stopOpacity="0.02" />
           </linearGradient>
         </defs>
 
-        <text
-          x={pad.left + 4}
-          y={pad.top + plotH - 8}
-          className="chart-live-value power-live"
-        >
+        <text x={pad.left + 4} y={pad.top + plotH - 6} className="chart-live-value power-live">
           {powerOutput.toFixed(0)} kW
         </text>
-        <text
-          x={pad.left + 4}
-          y={pad.top + plotH - 22}
-          className="chart-live-value wind-live"
-        >
+        <text x={pad.left + 4} y={pad.top + plotH - 20} className="chart-live-value wind-live">
           {windSpeed.toFixed(1)} m/s
         </text>
-
-        {isBrakeEngaged && (
-          <rect
-            x={pad.left}
-            y={pad.top}
-            width={plotW}
-            height={plotH}
-            fill="rgba(255,0,0,0.04)"
-            rx="2"
-          />
-        )}
       </svg>
       <div className="chart-unit-row">
-        <span className="chart-unit-label">功率 (kW) 左轴</span>
-        <span className="chart-unit-label">风速 (m/s) 右轴</span>
+        <span className="chart-unit-label">功率 (kW)</span>
+        <span className="chart-unit-label">风速 (m/s)</span>
       </div>
     </div>
   )
