@@ -32,7 +32,7 @@ export function FaultPanel({
   }
 
   const activeCount = alerts.filter((a) => a.active).length
-  const unacknowledgedActive = alerts.filter((a) => a.active && !a.acknowledged).length
+  const unacknowledgedCount = alerts.filter((a) => !a.acknowledged).length
 
   const handleReplayAlert = (alert: typeof alerts[0]) => {
     if (!onReplayAlert) return
@@ -52,7 +52,7 @@ export function FaultPanel({
         <ShieldAlert size={16} />
         <span>保护与故障</span>
         {activeCount > 0 && (
-          <span className={`fault-badge ${unacknowledgedActive > 0 ? 'fault-badge-pulse' : ''}`}>
+          <span className={`fault-badge ${unacknowledgedCount > 0 ? 'fault-badge-pulse' : ''}`}>
             {activeCount} 活跃
           </span>
         )}
@@ -76,11 +76,11 @@ export function FaultPanel({
           <Clock size={12} />
           <span>告警列表</span>
           <div className="alert-actions">
-            {alerts.some((a) => a.active && !a.acknowledged) && (
+            {alerts.some((a) => !a.acknowledged) && (
               <button
                 className="alert-action-btn alert-ack-all-btn"
                 onClick={acknowledgeAllAlerts}
-                title="确认全部活跃告警"
+                title="确认全部未确认告警"
               >
                 <CheckCheck size={11} />
               </button>
@@ -123,7 +123,7 @@ export function FaultPanel({
                 <span className="alert-message">{alert.message}</span>
               </div>
               <div className="alert-action-row">
-                {alert.active && !alert.acknowledged && (
+                {!alert.acknowledged && (
                   <button
                     className="alert-ack-btn"
                     onClick={() => acknowledgeAlert(alert.id)}

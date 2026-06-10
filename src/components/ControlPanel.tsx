@@ -21,6 +21,8 @@ export function ControlPanel({
   const toggleBrake = useTurbineStore((s) => s.toggleBrake)
   const toggleNacelleView = useTurbineStore((s) => s.toggleNacelleView)
   const getRecentPowerData = useTurbineStore((s) => s.getRecentPowerData)
+  const getChartDataForExport = useTurbineStore((s) => s.getChartDataForExport)
+  const getAvailableSeconds = useTurbineStore((s) => s.getAvailableSeconds)
   const manualReset = useTurbineStore((s) => s.manualReset)
   const enterMaintenance = useTurbineStore((s) => s.enterMaintenance)
   const exitMaintenance = useTurbineStore((s) => s.exitMaintenance)
@@ -29,6 +31,8 @@ export function ControlPanel({
   const [customMinutes, setCustomMinutes] = useState(5)
   const [csvFeedback, setCsvFeedback] = useState('')
   const csvMenuRef = useRef<HTMLDivElement>(null)
+
+  const available = getAvailableSeconds()
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -52,17 +56,20 @@ export function ControlPanel({
     (range: CSVTimeRange, customSec?: number) => {
       let seconds: number
       let label: string
+      let data: ReturnType<typeof getRecentPowerData>
       if (range === '2min') {
         seconds = 120
         label = '2min'
+        data = getChartDataForExport(seconds)
       } else if (range === '10min') {
         seconds = 600
         label = '10min'
+        data = getRecentPowerData(seconds)
       } else {
         seconds = (customSec || 5) * 60
         label = `${customSec || 5}min`
+        data = getRecentPowerData(seconds)
       }
-      const data = getRecentPowerData(seconds)
       if (data.length === 0) {
         setCsvFeedback('暂无足够数据，请先运行一段时间再导出')
         return
@@ -70,7 +77,7 @@ export function ControlPanel({
       exportCSV(data, label)
       setCsvFeedback(`已导出 ${data.length} 条数据`)
     },
-    [getRecentPowerData]
+    [getRecentPowerData, getChartDataForExport]
   )
 
   const handleExportCSV = (range: CSVTimeRange) => {
@@ -188,8 +195,18 @@ export function ControlPanel({
             {csvFeedback && <div className="csv-feedback">{csvFeedback}</div>}
             {showCsvMenu && (
               <div className="csv-menu">
-                <button onClick={() => handleExportCSV('2min')}>最近 2 分钟 (2s间隔)</button>
-                <button onClick={() => handleExportCSV('10min')}>最近 10 分钟 (1s间隔)</button>
+                <button onClick={() => handleExportCSV('2min')}>
+                  最近 2 分钟 (2s采样)
+                  {available.chart < 120 && (
+                    <span className="csv-data-hint">还需 {120 - available.chart}s 数据</span>
+                  )}
+                </button>
+                <button onClick={() => handleExportCSV('10min')}>
+                  最近 10 分钟 (1s采样)
+                  {available.replay < 600 && (
+                    <span className="csv-data-hint">还需 {600 - available.replay}s 数据</span>
+                  )}
+                </button>
                 <div className="csv-custom-row">
                   <span className="csv-custom-label">自定义</span>
                   <input

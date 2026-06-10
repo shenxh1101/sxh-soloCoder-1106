@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { Play } from 'lucide-react'
 import { useTurbineStore } from '../store/useTurbineStore'
 import { PowerDataPoint } from '../types/turbine'
@@ -27,7 +27,7 @@ function buildSvgPath(
 export function TrendChart({
   onReplayChart,
 }: {
-  onReplayChart?: (startOffset: number, duration: number) => void
+  onReplayChart?: (startOffset: number, duration: number) => boolean | void
 }) {
   const chartData = useTurbineStore((s) => s.chartData)
   const powerOutput = useTurbineStore((s) => s.powerOutput)
@@ -36,6 +36,7 @@ export function TrendChart({
   const isReplaying = useTurbineStore((s) => s.isReplaying)
   const replayIndex = useTurbineStore((s) => s.replayIndex)
   const replayWindow = useTurbineStore((s) => s.replayWindow)
+  const startReplay = useTurbineStore((s) => s.startReplay)
 
   const chartW = 300
   const chartH = 120
@@ -47,21 +48,49 @@ export function TrendChart({
     ? replayWindow.slice(0, Math.floor(replayIndex) + 1)
     : chartData
 
-  const { powerPath, windPath, yLabels, brakeRects } = useMemo(() => {
+  const [dragStart, setDragStart] = useState<{ x: number } | null>(null)
+  const [dragEnd, setDragEnd] = useState<{ x: number } | null>(null)
+  const [dragFeedback, setDragFeedback] = useState('')
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  const { powerPath, windPath, yLabels, brakeRects, timeRange, timeMin, xAxisLabel, xAxisStart } = useMemo(() => {
     if (displayData.length < 2) {
       const yLabels = [
         { y: pad.top, label: '2500' },
         { y: pad.top + plotH * 0.5, label: '1250' },
         { y: pad.top + plotH, label: '0' },
       ]
-      return { powerPath: '', windPath: '', yLabels, brakeRects: [] as { x: number; w: number }[] }
+      return {
+        powerPath: '',
+        windPath: '',
+        yLabels,
+        brakeRects: [] as { x: number; w: number }[],
+        timeRange: 120 * 1000,
+        timeMin: Date.now() - 120 * 1000,
+        xAxisLabel: '-120s',
+        xAxisStart: 0,
+      }
     }
 
     const now = Date.now()
-    const timeRange = 120 * 1000
-    const timeMin = isReplaying
-      ? displayData[0].timestamp
-      : now - timeRange
+    let timeRange: number
+    let timeMin: number
+    let xAxisLabel: string
+    let xAxisStart: number
+
+    if (isReplaying) {
+      const first = displayData[0].timestamp
+      const last = displayData[displayData.length - 1].timestamp
+      timeRange = Math.max((last - first) * 1.1, 10000)
+      timeMin = first - (timeRange - (last - first)) / 2
+      xAxisLabel = `${Math.round(-timeRange / 1000)}s`
+      xAxisStart = Math.round(timeRange / 1000)
+    } else {
+      timeRange = 120 * 1000
+      timeMin = now - timeRange
+      xAxisLabel = `-120s`
+      xAxisStart = 0
+    }
 
     const powerMax = 3000
     const windMax = 30
@@ -103,19 +132,103 @@ export function TrendChart({
       })
     }
 
-    return { powerPath, windPath, yLabels, brakeRects }
+    return { powerPath, windPath, yLabels, brakeRects, timeRange, timeMin, xAxisLabel, xAxisStart }
   }, [displayData, isReplaying])
+
+  const getEventX = useCallback(
+    (e: React.MouseEvent<SVGSVGElement> | MouseEvent) => {
+      const svg = svgRef.current
+      if (!svg) return 0
+      const rect = svg.getBoundingClientRect()
+      const scaleX = chartW / rect.width
+      return (e.clientX - rect.left) * scaleX
+    },
+    [chartW]
+  )
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (isReplaying || !onReplayChart) return
+      const x = getEventX(e)
+      if (x >= pad.left && x <= pad.left + plotW) {
+        setDragStart({ x })
+        setDragEnd(null)
+        setDragFeedback('')
+      }
+    },
+    [isReplaying, onReplayChart, getEventX, pad.left, plotW]
+  )
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!dragStart) return
+      const x = getEventX(e)
+      const clamped = Math.max(pad.left, Math.min(pad.left + plotW, x))
+      setDragEnd({ x: clamped })
+    },
+    [dragStart, getEventX, pad.left, plotW]
+  )
+
+  const handleMouseUp = useCallback(() => {
+    if (!dragStart || !dragEnd || !onReplayChart) {
+      setDragStart(null)
+      setDragEnd(null)
+      return
+    }
+
+    const x1 = Math.min(dragStart.x, dragEnd.x)
+    const x2 = Math.max(dragStart.x, dragEnd.x)
+    const minDragPx = 10
+
+    if (x2 - x1 < minDragPx) {
+      setDragStart(null)
+      setDragEnd(null)
+      return
+    }
+
+    const selectionTimeMin = timeMin + ((x1 - pad.left) / plotW) * timeRange
+    const selectionTimeMax = timeMin + ((x2 - pad.left) / plotW) * timeRange
+    const now = Date.now()
+    const startOffset = Math.round((now - selectionTimeMin) / 1000)
+    const duration = Math.max(5, Math.round((selectionTimeMax - selectionTimeMin) / 1000))
+
+    const ok = startReplay(startOffset, duration)
+    if (!ok) {
+      setDragFeedback('该时间段暂无足够历史数据，请先积累更多运行数据')
+      setTimeout(() => setDragFeedback(''), 3000)
+    }
+    setDragStart(null)
+    setDragEnd(null)
+  }, [dragStart, dragEnd, onReplayChart, timeMin, pad.left, plotW, timeRange, startReplay])
+
+  const handleMouseLeave = useCallback(() => {
+    setDragStart(null)
+    setDragEnd(null)
+  }, [])
 
   const handleReplayChart = () => {
     if (onReplayChart) onReplayChart(120, 30)
   }
 
+  const chartTitle = useMemo(() => {
+    if (isReplaying) {
+      const totalSec = Math.round(timeRange / 1000)
+      return `⏪ 历史回放 · 最近${totalSec}秒`
+    }
+    return '实时趋势 · 最近2分钟'
+  }, [isReplaying, timeRange])
+
+  const selectionRect = useMemo(() => {
+    if (!dragStart || !dragEnd) return null
+    const x = Math.min(dragStart.x, dragEnd.x)
+    const w = Math.abs(dragEnd.x - dragStart.x)
+    return { x, y: pad.top, w, h: plotH }
+  }, [dragStart, dragEnd, pad.top, plotH])
+
   return (
     <div className="trend-chart-card">
       <div className="trend-chart-header">
-        <span className="trend-chart-title">
-          {isReplaying ? '⏪ 历史回放' : '实时趋势 · 最近2分钟'}
-        </span>
+        <span className="trend-chart-title">{chartTitle}</span>
         <div className="trend-chart-legend">
           <span className="legend-line power-legend">
             <span className="legend-dot-line" style={{ background: '#00e5ff' }} />
@@ -133,7 +246,15 @@ export function TrendChart({
           )}
         </div>
       </div>
-      <svg viewBox={`0 0 ${chartW} ${chartH}`} className="trend-svg">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${chartW} ${chartH}`}
+        className={`trend-svg ${!isReplaying ? 'trend-selectable' : ''}`}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      >
         {yLabels.map((yl, i) => (
           <g key={`yg-${i}`}>
             <line
@@ -159,7 +280,7 @@ export function TrendChart({
           </g>
         ))}
 
-        <text x={pad.left + plotW / 2} y={chartH - 2} textAnchor="middle" className="chart-axis-label">-120s</text>
+        <text x={pad.left + plotW / 2} y={chartH - 2} textAnchor="middle" className="chart-axis-label">{xAxisLabel}</text>
         <text x={pad.left + plotW} y={chartH - 2} textAnchor="end" className="chart-axis-label">now</text>
 
         <clipPath id="plotClip3">
@@ -185,6 +306,21 @@ export function TrendChart({
           </g>
         )}
 
+        {selectionRect && (
+          <g clipPath="url(#plotClip3)">
+            <rect
+              x={selectionRect.x}
+              y={selectionRect.y}
+              width={selectionRect.w}
+              height={selectionRect.h}
+              fill="rgba(0, 229, 255, 0.08)"
+              stroke="rgba(0, 229, 255, 0.4)"
+              strokeWidth="1"
+              strokeDasharray="3 2"
+            />
+          </g>
+        )}
+
         <defs>
           <linearGradient id="powerGrad3" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#00e5ff" stopOpacity="0.8" />
@@ -199,6 +335,12 @@ export function TrendChart({
         <span className="chart-unit-label">功率 (kW)</span>
         <span className="chart-unit-label">风速 (m/s)</span>
       </div>
+      {dragFeedback && (
+        <div className="chart-drag-feedback">{dragFeedback}</div>
+      )}
+      {!isReplaying && onReplayChart && (
+        <div className="chart-drag-hint">拖拽框选曲线区域可进入回放</div>
+      )}
     </div>
   )
 }

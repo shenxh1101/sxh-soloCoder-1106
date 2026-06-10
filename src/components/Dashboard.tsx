@@ -7,6 +7,7 @@ export function Dashboard() {
   const totalEnergy = useTurbineStore((s) => s.totalEnergy)
   const windSpeed = useTurbineStore((s) => s.windSpeed)
   const isBrakeEngaged = useTurbineStore((s) => s.isBrakeEngaged)
+  const startReplay = useTurbineStore((s) => s.startReplay)
 
   const powerPercent = Math.min((powerOutput / 2500) * 100, 100)
   const circumference = 2 * Math.PI * 52
@@ -49,7 +50,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <TrendChart />
+      <TrendChart onReplayChart={startReplay} />
 
       <div className="dashboard-card">
         <div className="card-header">

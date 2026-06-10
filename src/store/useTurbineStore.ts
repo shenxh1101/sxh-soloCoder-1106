@@ -24,6 +24,15 @@ interface TurbineStore extends TurbineState {
   replaySpeed: number
   replayDuration: number
   replayRangeLabel: string
+  replaySnapshot: {
+    windSpeed: number
+    targetWindSpeed: number
+    rotorSpeed: number
+    powerOutput: number
+    isBrakeEngaged: boolean
+    isStormMode: boolean
+    isAutoProtected: boolean
+  } | null
 
   setTargetWindSpeed: (speed: number) => void
   toggleStormMode: () => void
@@ -33,6 +42,8 @@ interface TurbineStore extends TurbineState {
   setWindSpeed: (speed: number) => void
   updateSimulation: (deltaTime: number) => void
   getRecentPowerData: (seconds: number) => PowerDataPoint[]
+  getChartDataForExport: (seconds: number) => PowerDataPoint[]
+  getAvailableSeconds: () => { chart: number; replay: number }
   manualReset: () => void
 
   acknowledgeAlert: (id: number) => void
@@ -191,6 +202,7 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
   replaySpeed: 1,
   replayDuration: 0,
   replayRangeLabel: '',
+  replaySnapshot: null,
 
   setTargetWindSpeed: (speed: number) => {
     const s = get()
@@ -296,13 +308,15 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
 
   acknowledgeAllAlerts: () => {
     set((state) => ({
-      alerts: state.alerts.map((a) => (a.active ? { ...a, acknowledged: true } : a)),
+      alerts: state.alerts.map((a) =>
+        !a.acknowledged ? { ...a, acknowledged: true } : a
+      ),
     }))
   },
 
   clearAcknowledgedAlerts: () => {
     set((state) => ({
-      alerts: state.alerts.filter((a) => a.active || !a.acknowledged),
+      alerts: state.alerts.filter((a) => !(a.acknowledged && !a.active)),
     }))
   },
 
@@ -351,6 +365,16 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
 
     if (windowData.length < 2) return false
 
+    const snapshot = {
+      windSpeed: state.windSpeed,
+      targetWindSpeed: state.targetWindSpeed,
+      rotorSpeed: state.rotorSpeed,
+      powerOutput: state.powerOutput,
+      isBrakeEngaged: state.isBrakeEngaged,
+      isStormMode: state.isStormMode,
+      isAutoProtected: state.isAutoProtected,
+    }
+
     set({
       isReplaying: true,
       replayWindow: windowData,
@@ -358,6 +382,7 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
       replaySpeed: 1,
       replayDuration: duration,
       replayRangeLabel: `${Math.round(startOffset / 60)}分钟`,
+      replaySnapshot: snapshot,
       isStormMode: false,
       isAutoProtected: false,
       isMaintenance: false,
@@ -368,16 +393,19 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
 
   stopReplay: () => {
     const state = get()
+    const snap = state.replaySnapshot
     set({
       isReplaying: false,
       replayWindow: [],
       replayIndex: 0,
-      windSpeed: 8,
-      targetWindSpeed: 8,
-      rotorSpeed: 0,
-      powerOutput: 0,
-      isBrakeEngaged: false,
-      isStormMode: false,
+      replaySnapshot: null,
+      windSpeed: snap ? snap.windSpeed : 8,
+      targetWindSpeed: snap ? snap.targetWindSpeed : 8,
+      rotorSpeed: snap ? snap.rotorSpeed : 0,
+      powerOutput: snap ? snap.powerOutput : 0,
+      isBrakeEngaged: snap ? snap.isBrakeEngaged : false,
+      isStormMode: snap ? snap.isStormMode : false,
+      isAutoProtected: snap ? snap.isAutoProtected : false,
       events: pushEvent(state.events, 'replay_end', '历史回放结束'),
     })
   },
@@ -397,16 +425,20 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
     const newIndex = replayIndex + advance
 
     if (newIndex >= totalPoints - 1) {
-      const lastPoint = replayWindow[replayWindow.length - 1]
+      const snap = state.replaySnapshot
       set({
         replayIndex: replayWindow.length - 1,
-        windSpeed: lastPoint.windSpeed,
-        rotorSpeed: lastPoint.rotorSpeed,
-        powerOutput: lastPoint.powerOutput,
-        isBrakeEngaged: lastPoint.isBrakeEngaged,
-        isStormMode: lastPoint.isStormMode,
         isReplaying: false,
         replayWindow: [],
+        replaySnapshot: null,
+        windSpeed: snap ? snap.windSpeed : 8,
+        targetWindSpeed: snap ? snap.targetWindSpeed : 8,
+        rotorSpeed: snap ? snap.rotorSpeed : 0,
+        powerOutput: snap ? snap.powerOutput : 0,
+        isBrakeEngaged: snap ? snap.isBrakeEngaged : false,
+        isStormMode: snap ? snap.isStormMode : false,
+        isAutoProtected: snap ? snap.isAutoProtected : false,
+        events: pushEvent(state.events, 'replay_end', '历史回放结束'),
       })
       return
     }
@@ -587,5 +619,28 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
   getRecentPowerData: (seconds: number) => {
     const cutoff = Date.now() - seconds * 1000
     return get().replayData.filter((p) => p.timestamp > cutoff)
+  },
+
+  getChartDataForExport: (seconds: number) => {
+    const cutoff = Date.now() - seconds * 1000
+    return get().chartData.filter((p) => p.timestamp > cutoff)
+  },
+
+  getAvailableSeconds: () => {
+    const state = get()
+    const now = Date.now()
+    if (state.replayData.length === 0 && state.chartData.length === 0) {
+      return { chart: 0, replay: 0 }
+    }
+    const oldestReplay = state.replayData.length > 0
+      ? now - state.replayData[0].timestamp
+      : 0
+    const oldestChart = state.chartData.length > 0
+      ? now - state.chartData[0].timestamp
+      : 0
+    return {
+      chart: Math.floor(oldestChart / 1000),
+      replay: Math.floor(oldestReplay / 1000),
+    }
   },
 }))

@@ -1268,6 +1268,42 @@ html, body, #root {
   background: rgba(0, 229, 255, 0.12);
 }
 
+.csv-data-hint {
+  display: block;
+  font-size: 8px;
+  color: var(--color-warning);
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+.csv-menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.chart-drag-hint {
+  text-align: center;
+  font-size: 8px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  opacity: 0.6;
+}
+
+.chart-drag-feedback {
+  padding: 4px 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: rgba(255, 68, 68, 0.08);
+  color: var(--color-danger);
+  font-size: 9px;
+  text-align: center;
+}
+
+.trend-selectable {
+  cursor: crosshair;
+}
+
 @media (max-width: 900px) {
   .control-row {
     flex-direction: column;
