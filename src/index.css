@@ -1137,6 +1137,137 @@ html, body, #root {
   animation: brakePulse 1s ease-in-out infinite !important;
 }
 
+.replay-error {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 68, 68, 0.08);
+  color: var(--color-danger);
+  font-size: 10px;
+  text-align: center;
+}
+
+.chart-replay-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  background: rgba(255, 170, 0, 0.08);
+  color: #ffaa00;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chart-replay-btn:hover {
+  background: rgba(255, 170, 0, 0.15);
+  border-color: rgba(255, 170, 0, 0.5);
+}
+
+.alert-action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.alert-replay-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 170, 0, 0.25);
+  background: rgba(255, 170, 0, 0.06);
+  color: #ffaa00;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.alert-replay-btn:hover {
+  background: rgba(255, 170, 0, 0.12);
+}
+
+.alert-ack-all-btn {
+  color: var(--color-warning);
+}
+
+.alert-ack-all-btn:hover {
+  background: rgba(255, 109, 0, 0.1);
+  color: var(--color-warning);
+}
+
+.csv-feedback {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--color-text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+  z-index: 101;
+}
+
+.csv-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 2px;
+}
+
+.csv-custom-label {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.csv-custom-input {
+  width: 40px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--color-panel-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: center;
+  outline: none;
+}
+
+.csv-custom-input:focus {
+  border-color: rgba(0, 229, 255, 0.3);
+}
+
+.csv-custom-unit {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.csv-custom-btn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  background: rgba(0, 229, 255, 0.06);
+  color: var(--color-accent);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.csv-custom-btn:hover {
+  background: rgba(0, 229, 255, 0.12);
+}
+
 @media (max-width: 900px) {
   .control-row {
     flex-direction: column;

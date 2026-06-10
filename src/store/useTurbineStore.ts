@@ -19,9 +19,11 @@ interface TurbineStore extends TurbineState {
   alerts: Alert[]
 
   replayData: PowerDataPoint[]
+  replayWindow: PowerDataPoint[]
   replayIndex: number
   replaySpeed: number
-  replayRangeEnd: number
+  replayDuration: number
+  replayRangeLabel: string
 
   setTargetWindSpeed: (speed: number) => void
   toggleStormMode: () => void
@@ -34,12 +36,13 @@ interface TurbineStore extends TurbineState {
   manualReset: () => void
 
   acknowledgeAlert: (id: number) => void
+  acknowledgeAllAlerts: () => void
   clearAcknowledgedAlerts: () => void
 
   enterMaintenance: () => void
   exitMaintenance: () => void
 
-  startReplay: (startOffset: number, duration: number) => void
+  startReplay: (startOffset: number, duration: number) => boolean
   stopReplay: () => void
   tickReplay: (deltaTime: number) => void
 }
@@ -56,7 +59,8 @@ let replaySampleTimer = 0
 let overwindTimer = 0
 let eventIdCounter = 1
 let alertIdCounter = 1000
-let lastOverwindAlertId = 0
+let lastOverwindWarningId = 0
+let lastOverwindShutdownId = 0
 let overwindWasActive = false
 
 function pushEvent(
@@ -75,38 +79,40 @@ function pushEvent(
   return updated
 }
 
-function mergeOverwindAlert(
+function createOrMergeAlert(
   alerts: Alert[],
+  type: Alert['type'],
   level: AlertLevel,
   message: string,
-  active: boolean
+  active: boolean,
+  mergeIdRef: { current: number }
 ): { alerts: Alert[]; alertId: number } {
-  if (active && lastOverwindAlertId) {
-    const existing = alerts.find((a) => a.id === lastOverwindAlertId)
+  if (active && mergeIdRef.current) {
+    const existing = alerts.find((a) => a.id === mergeIdRef.current)
     if (existing && existing.active) {
-      return { alerts, alertId: lastOverwindAlertId }
+      return { alerts, alertId: mergeIdRef.current }
     }
   }
 
-  if (!active && lastOverwindAlertId) {
-    const existing = alerts.find((a) => a.id === lastOverwindAlertId)
+  if (!active && mergeIdRef.current) {
+    const existing = alerts.find((a) => a.id === mergeIdRef.current)
     if (existing && existing.active) {
       const updated = alerts.map((a) =>
-        a.id === lastOverwindAlertId
+        a.id === mergeIdRef.current
           ? { ...a, active: false, endTime: Date.now() }
           : a
       )
-      lastOverwindAlertId = 0
+      mergeIdRef.current = 0
       return { alerts: updated, alertId: 0 }
     }
   }
 
   if (active) {
     const id = alertIdCounter++
-    lastOverwindAlertId = id
+    mergeIdRef.current = id
     const alert: Alert = {
       id,
-      type: 'overwind_warning',
+      type,
       level,
       message,
       startTime: Date.now(),
@@ -180,13 +186,15 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
   events: [],
   alerts: [],
   replayData: [],
+  replayWindow: [],
   replayIndex: 0,
   replaySpeed: 1,
-  replayRangeEnd: 0,
+  replayDuration: 0,
+  replayRangeLabel: '',
 
   setTargetWindSpeed: (speed: number) => {
-    const state = get()
-    if (state.isStormMode || state.isAutoProtected || state.isMaintenance) return
+    const s = get()
+    if (s.isStormMode || s.isAutoProtected || s.isMaintenance || s.isReplaying) return
     set({ targetWindSpeed: Math.max(0, Math.min(25, speed)) })
   },
 
@@ -196,7 +204,7 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
 
   toggleStormMode: () => {
     set((state) => {
-      if (state.isAutoProtected || state.isMaintenance) return state
+      if (state.isAutoProtected || state.isMaintenance || state.isReplaying) return state
       if (!state.isStormMode) {
         lastStormSpeed = state.windSpeed
         stormTimer = 0
@@ -219,7 +227,8 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
     set((state) => {
       if (
         (state.isAutoProtected && state.isBrakeEngaged) ||
-        state.isMaintenance
+        state.isMaintenance ||
+        state.isReplaying
       )
         return state
       const newBrake = !state.isBrakeEngaged
@@ -260,8 +269,12 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
       isBrakeEngaged: false,
       isStormMode: false,
       isAutoProtected: false,
+      isReplaying: false,
       chartData: [],
       csvData: [],
+      replayData: [],
+      replayWindow: [],
+      replayIndex: 0,
       events: pushEvent(state.events, 'manual_reset', '系统已手动复位'),
     })
     lastStormSpeed = 8
@@ -271,6 +284,8 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
     replaySampleTimer = 0
     overwindTimer = 0
     overwindWasActive = false
+    lastOverwindWarningId = 0
+    lastOverwindShutdownId = 0
   },
 
   acknowledgeAlert: (id: number) => {
@@ -279,9 +294,15 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
     }))
   },
 
+  acknowledgeAllAlerts: () => {
+    set((state) => ({
+      alerts: state.alerts.map((a) => (a.active ? { ...a, acknowledged: true } : a)),
+    }))
+  },
+
   clearAcknowledgedAlerts: () => {
     set((state) => ({
-      alerts: state.alerts.filter((a) => !a.acknowledged || a.active),
+      alerts: state.alerts.filter((a) => a.active || !a.acknowledged),
     }))
   },
 
@@ -319,49 +340,78 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
     })
   },
 
-  startReplay: (startOffset: number, duration: number) => {
+  startReplay: (startOffset: number, duration: number): boolean => {
     const state = get()
     const now = Date.now()
     const startTime = now - startOffset * 1000
-    const endTime = startTime + duration * 1000
 
-    const relevant = state.replayData.filter(
-      (p) => p.timestamp >= startTime && p.timestamp <= endTime
+    const windowData = state.replayData.filter(
+      (p) => p.timestamp >= startTime && p.timestamp <= now
     )
 
-    if (relevant.length < 2) return
+    if (windowData.length < 2) return false
 
     set({
       isReplaying: true,
+      replayWindow: windowData,
       replayIndex: 0,
       replaySpeed: 1,
-      replayRangeEnd: endTime,
+      replayDuration: duration,
+      replayRangeLabel: `${Math.round(startOffset / 60)}分钟`,
+      isStormMode: false,
+      isAutoProtected: false,
+      isMaintenance: false,
       events: pushEvent(state.events, 'replay_start', `开始历史回放 (最近${startOffset}s)`),
     })
+    return true
   },
 
   stopReplay: () => {
     const state = get()
     set({
       isReplaying: false,
+      replayWindow: [],
       replayIndex: 0,
+      windSpeed: 8,
+      targetWindSpeed: 8,
+      rotorSpeed: 0,
+      powerOutput: 0,
+      isBrakeEngaged: false,
+      isStormMode: false,
       events: pushEvent(state.events, 'replay_end', '历史回放结束'),
     })
   },
 
   tickReplay: (deltaTime: number) => {
     const state = get()
-    const { replayData, replayIndex, replaySpeed } = state
+    const { replayWindow, replayIndex, replaySpeed, replayDuration } = state
 
-    if (replayIndex >= replayData.length - 1) {
-      set({ isReplaying: false, replayIndex: 0 })
+    if (replayWindow.length < 2) {
+      set({ isReplaying: false, replayWindow: [], replayIndex: 0 })
       return
     }
 
-    const advance = replaySpeed * 0.3
-    const newIndex = Math.min(replayIndex + advance, replayData.length - 1)
+    const totalPoints = replayWindow.length
+    const pointsPerSecond = totalPoints / replayDuration
+    const advance = pointsPerSecond * deltaTime * replaySpeed
+    const newIndex = replayIndex + advance
 
-    const point = replayData[Math.floor(newIndex)]
+    if (newIndex >= totalPoints - 1) {
+      const lastPoint = replayWindow[replayWindow.length - 1]
+      set({
+        replayIndex: replayWindow.length - 1,
+        windSpeed: lastPoint.windSpeed,
+        rotorSpeed: lastPoint.rotorSpeed,
+        powerOutput: lastPoint.powerOutput,
+        isBrakeEngaged: lastPoint.isBrakeEngaged,
+        isStormMode: lastPoint.isStormMode,
+        isReplaying: false,
+        replayWindow: [],
+      })
+      return
+    }
+
+    const point = replayWindow[Math.floor(newIndex)]
 
     set({
       replayIndex: newIndex,
@@ -403,38 +453,67 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
 
     if (!isBrakeEngaged && newWindSpeed >= OVERWIND_THRESHOLD) {
       overwindTimer += deltaTime
-      const isOverwind = overwindTimer >= OVERWIND_DURATION
 
-      if (overwindTimer > 0.1 && overwindTimer < 0.2 && !overwindWasActive) {
+      const justEnteredOverwind = overwindTimer - deltaTime <= 0.001 && overwindTimer > 0
+      if (justEnteredOverwind && !overwindWasActive) {
         overwindWasActive = true
-        const result = mergeOverwindAlert(
+        const result = createOrMergeAlert(
           alerts,
+          'overwind_warning',
           'warning',
           `过风速警告 (${newWindSpeed.toFixed(1)} m/s)`,
-          true
+          true,
+          { current: lastOverwindWarningId }
         )
         alerts = result.alerts
+        lastOverwindWarningId = result.alertId
         events = pushEvent(events, 'overwind_warning', `风速过高警告 (${newWindSpeed.toFixed(1)} m/s)`)
       }
 
-      if (isOverwind && !isAutoProtected) {
+      if (overwindTimer >= OVERWIND_DURATION && !isAutoProtected) {
         isBrakeEngaged = true
         isAutoProtected = true
-        overwindTimer = 0
-        const result = mergeOverwindAlert(
+
+        if (lastOverwindWarningId) {
+          const warnResult = createOrMergeAlert(alerts, 'overwind_warning', 'warning', '', false, {
+            current: lastOverwindWarningId,
+          })
+          alerts = warnResult.alerts
+          lastOverwindWarningId = 0
+        }
+
+        const shutdownResult = createOrMergeAlert(
           alerts,
+          'auto_shutdown',
           'shutdown',
           `过风速保护停机 (${newWindSpeed.toFixed(1)} m/s ≥ ${OVERWIND_THRESHOLD} m/s)`,
-          false
+          true,
+          { current: lastOverwindShutdownId }
         )
-        alerts = result.alerts
+        alerts = shutdownResult.alerts
+        lastOverwindShutdownId = shutdownResult.alertId
         events = pushEvent(events, 'auto_shutdown', `过风速保护触发，自动停机`)
+
+        overwindTimer = 0
       }
     } else {
-      if (newWindSpeed < OVERWIND_THRESHOLD - 1 && overwindWasActive) {
+      if (overwindWasActive && newWindSpeed < OVERWIND_THRESHOLD - 1) {
         overwindWasActive = false
-        const result = mergeOverwindAlert(alerts, 'shutdown', '', false)
-        alerts = result.alerts
+
+        if (lastOverwindWarningId) {
+          const warnResult = createOrMergeAlert(alerts, 'overwind_warning', 'warning', '', false, {
+            current: lastOverwindWarningId,
+          })
+          alerts = warnResult.alerts
+          lastOverwindWarningId = 0
+        }
+        if (lastOverwindShutdownId) {
+          const sdResult = createOrMergeAlert(alerts, 'auto_shutdown', 'shutdown', '', false, {
+            current: lastOverwindShutdownId,
+          })
+          alerts = sdResult.alerts
+          lastOverwindShutdownId = 0
+        }
       }
       overwindTimer = Math.max(0, overwindTimer - deltaTime * 2)
     }
@@ -507,7 +586,6 @@ export const useTurbineStore = create<TurbineStore>((set, get) => ({
 
   getRecentPowerData: (seconds: number) => {
     const cutoff = Date.now() - seconds * 1000
-    return get()
-      .replayData.filter((p) => p.timestamp > cutoff)
+    return get().replayData.filter((p) => p.timestamp > cutoff)
   },
 }))

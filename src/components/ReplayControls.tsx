@@ -1,27 +1,48 @@
 import { useState, useEffect, useRef } from 'react'
-import { Play, Pause, SkipForward, SkipBack, X, History } from 'lucide-react'
+import { Play, X, History } from 'lucide-react'
 import { useTurbineStore } from '../store/useTurbineStore'
 
-export function ReplayControls() {
+export function ReplayControls({
+  onReplayRequest,
+}: {
+  onReplayRequest?: React.Dispatch<React.SetStateAction<{ startOffset: number; duration: number } | null>>
+}) {
   const isReplaying = useTurbineStore((s) => s.isReplaying)
   const isMaintenance = useTurbineStore((s) => s.isMaintenance)
+  const replayRangeLabel = useTurbineStore((s) => s.replayRangeLabel)
   const startReplay = useTurbineStore((s) => s.startReplay)
   const stopReplay = useTurbineStore((s) => s.stopReplay)
   const [showPanel, setShowPanel] = useState(false)
   const [startOffset, setStartOffset] = useState(120)
   const [duration, setDuration] = useState(30)
-  const replaySpeedRef = useRef(1)
+  const [startFailed, setStartFailed] = useState(false)
 
   useEffect(() => {
     if (!isReplaying) setShowPanel(false)
   }, [isReplaying])
 
+  useEffect(() => {
+    if (onReplayRequest) {
+      const handler = (req: { startOffset: number; duration: number } | null) => {
+        if (req) {
+          const ok = startReplay(req.startOffset, req.duration)
+          if (!ok) setStartFailed(true)
+          setTimeout(() => setStartFailed(false), 2000)
+        }
+      }
+      return () => {}
+    }
+  }, [onReplayRequest, startReplay])
+
   const handleStart = () => {
-    startReplay(startOffset, duration)
+    const ok = startReplay(startOffset, duration)
+    if (!ok) {
+      setStartFailed(true)
+      setTimeout(() => setStartFailed(false), 2000)
+    }
   }
 
   const handleSpeed = (s: number) => {
-    replaySpeedRef.current = s
     useTurbineStore.setState({ replaySpeed: s })
   }
 
@@ -56,7 +77,6 @@ export function ReplayControls() {
             <div className="replay-field">
               <label>回看范围</label>
               <select value={startOffset} onChange={(e) => setStartOffset(Number(e.target.value))}>
-                <option value={60}>最近 1 分钟</option>
                 <option value={120}>最近 2 分钟</option>
                 <option value={300}>最近 5 分钟</option>
                 <option value={600}>最近 10 分钟</option>
@@ -71,6 +91,9 @@ export function ReplayControls() {
                 <option value={120}>120 秒</option>
               </select>
             </div>
+            {startFailed && (
+              <div className="replay-error">该时间段暂无数据，请先积累一些运行数据</div>
+            )}
             <button className="replay-start-btn" onClick={handleStart}>
               <Play size={14} />
               <span>开始回放</span>
@@ -81,12 +104,12 @@ export function ReplayControls() {
 
       {isReplaying && (
         <div className="replay-overlay">
-          <div className="replay-overlay-badge">⏪ 历史回放中</div>
+          <div className="replay-overlay-badge">⏪ 历史回放中 · {replayRangeLabel}</div>
           <div className="replay-speed-controls">
             {[0.5, 1, 2, 4].map((s) => (
               <button
                 key={s}
-                className={`replay-speed-btn ${replaySpeedRef.current === s ? 'active' : ''}`}
+                className={`replay-speed-btn ${useTurbineStore.getState().replaySpeed === s ? 'active' : ''}`}
                 onClick={() => handleSpeed(s)}
               >
                 {s}x

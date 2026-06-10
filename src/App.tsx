@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { WindTurbineModel } from './components/WindTurbineModel'
 import { Environment3D } from './components/Environment3D'
@@ -11,8 +12,25 @@ import { StatusBar } from './components/StatusBar'
 import { FaultPanel } from './components/FaultPanel'
 import { ReplayControls } from './components/ReplayControls'
 import { SimulationRunner } from './components/SimulationRunner'
+import { useTurbineStore } from './store/useTurbineStore'
 
 export default function App() {
+  const startReplay = useTurbineStore((s) => s.startReplay)
+
+  const handleReplayChart = useCallback(
+    (startOffset: number, duration: number) => {
+      startReplay(startOffset, duration)
+    },
+    [startReplay]
+  )
+
+  const handleReplayAlert = useCallback(
+    (startOffset: number, duration: number) => {
+      startReplay(startOffset, duration)
+    },
+    [startReplay]
+  )
+
   return (
     <div className="app-container">
       <SimulationRunner />
@@ -42,7 +60,7 @@ export default function App() {
       <Dashboard />
       <ControlPanel />
       <WindCompass />
-      <FaultPanel />
+      <FaultPanel onReplayAlert={handleReplayAlert} />
       <StatusBar />
       <ReplayControls />
     </div>

@@ -1,10 +1,14 @@
-import { useState, useRef, useEffect } from 'react'
-import { Wind, Zap, Camera, Download, RotateCcw, Wrench, History } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Wind, Zap, Camera, Download, RotateCcw, Wrench } from 'lucide-react'
 import { useTurbineStore } from '../store/useTurbineStore'
 import { exportCSV } from '../utils/csvExport'
 import { CSVTimeRange } from '../types/turbine'
 
-export function ControlPanel() {
+export function ControlPanel({
+  onReplayRequest,
+}: {
+  onReplayRequest?: React.Dispatch<React.SetStateAction<{ startOffset: number; duration: number } | null>>
+}) {
   const targetWindSpeed = useTurbineStore((s) => s.targetWindSpeed)
   const isStormMode = useTurbineStore((s) => s.isStormMode)
   const isBrakeEngaged = useTurbineStore((s) => s.isBrakeEngaged)
@@ -22,23 +26,61 @@ export function ControlPanel() {
   const exitMaintenance = useTurbineStore((s) => s.exitMaintenance)
 
   const [showCsvMenu, setShowCsvMenu] = useState(false)
+  const [customMinutes, setCustomMinutes] = useState(5)
+  const [csvFeedback, setCsvFeedback] = useState('')
   const csvMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (csvMenuRef.current && !csvMenuRef.current.contains(e.target as Node)) {
         setShowCsvMenu(false)
+        setCsvFeedback('')
       }
     }
     if (showCsvMenu) document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showCsvMenu])
 
+  useEffect(() => {
+    if (csvFeedback) {
+      const t = setTimeout(() => setCsvFeedback(''), 3000)
+      return () => clearTimeout(t)
+    }
+  }, [csvFeedback])
+
+  const doExport = useCallback(
+    (range: CSVTimeRange, customSec?: number) => {
+      let seconds: number
+      let label: string
+      if (range === '2min') {
+        seconds = 120
+        label = '2min'
+      } else if (range === '10min') {
+        seconds = 600
+        label = '10min'
+      } else {
+        seconds = (customSec || 5) * 60
+        label = `${customSec || 5}min`
+      }
+      const data = getRecentPowerData(seconds)
+      if (data.length === 0) {
+        setCsvFeedback('暂无足够数据，请先运行一段时间再导出')
+        return
+      }
+      exportCSV(data, label)
+      setCsvFeedback(`已导出 ${data.length} 条数据`)
+    },
+    [getRecentPowerData]
+  )
+
   const handleExportCSV = (range: CSVTimeRange) => {
-    const seconds = range === '2min' ? 120 : range === '10min' ? 600 : 0
-    const data = getRecentPowerData(seconds)
-    if (data.length === 0) return
-    exportCSV(data, range)
+    if (range === 'custom') return
+    doExport(range)
+    setShowCsvMenu(false)
+  }
+
+  const handleCustomExport = () => {
+    doExport('custom', customMinutes)
     setShowCsvMenu(false)
   }
 
@@ -143,10 +185,26 @@ export function ControlPanel() {
               <Download size={18} />
               <span>导出CSV</span>
             </button>
+            {csvFeedback && <div className="csv-feedback">{csvFeedback}</div>}
             {showCsvMenu && (
               <div className="csv-menu">
                 <button onClick={() => handleExportCSV('2min')}>最近 2 分钟 (2s间隔)</button>
                 <button onClick={() => handleExportCSV('10min')}>最近 10 分钟 (1s间隔)</button>
+                <div className="csv-custom-row">
+                  <span className="csv-custom-label">自定义</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={customMinutes}
+                    onChange={(e) => setCustomMinutes(Math.max(1, Math.min(10, Number(e.target.value))))}
+                    className="csv-custom-input"
+                  />
+                  <span className="csv-custom-unit">分钟</span>
+                  <button className="csv-custom-btn" onClick={handleCustomExport}>
+                    导出
+                  </button>
+                </div>
               </div>
             )}
           </div>
