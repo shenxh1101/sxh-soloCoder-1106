@@ -8,6 +8,7 @@ import { Dashboard } from './components/Dashboard'
 import { ControlPanel } from './components/ControlPanel'
 import { WindCompass } from './components/WindCompass'
 import { StatusBar } from './components/StatusBar'
+import { FaultPanel } from './components/FaultPanel'
 import { SimulationRunner } from './components/SimulationRunner'
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
       <Dashboard />
       <ControlPanel />
       <WindCompass />
+      <FaultPanel />
       <StatusBar />
     </div>
   )

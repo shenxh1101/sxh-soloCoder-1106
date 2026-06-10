@@ -3,30 +3,32 @@ import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { useTurbineStore } from '../store/useTurbineStore'
 
-function Blade() {
-  const shape = new THREE.Shape()
-  shape.moveTo(0, -0.2)
-  shape.lineTo(0.4, -0.15)
-  shape.lineTo(0.8, -0.05)
-  shape.lineTo(1.2, 0)
-  shape.lineTo(0.8, 0.05)
-  shape.lineTo(0.4, 0.15)
-  shape.lineTo(0, 0.2)
-  shape.closePath()
+function BladeShape() {
+  const profile = new THREE.Shape()
+  profile.moveTo(0, -0.18)
+  profile.bezierCurveTo(0.3, -0.14, 0.6, -0.06, 0.9, -0.02)
+  profile.bezierCurveTo(1.0, -0.01, 1.1, 0, 1.15, 0)
+  profile.bezierCurveTo(1.1, 0.01, 1.0, 0.02, 0.9, 0.03)
+  profile.bezierCurveTo(0.6, 0.08, 0.3, 0.15, 0, 0.18)
+  profile.closePath()
+  return profile
+}
 
+function Blade() {
+  const shape = BladeShape()
   const extrudeSettings: THREE.ExtrudeGeometryOptions = {
     steps: 1,
-    depth: 18,
+    depth: 20,
     bevelEnabled: true,
-    bevelThickness: 0.05,
-    bevelSize: 0.03,
-    bevelSegments: 2,
+    bevelThickness: 0.04,
+    bevelSize: 0.02,
+    bevelSegments: 3,
   }
 
   return (
-    <mesh position={[0, 0, 0.8]} rotation={[0, 0, Math.PI / 2]}>
+    <mesh rotation={[Math.PI / 2, 0, 0]}>
       <extrudeGeometry args={[shape, extrudeSettings]} />
-      <meshStandardMaterial color="#e8e8e8" metalness={0.3} roughness={0.4} />
+      <meshStandardMaterial color="#f0f0f0" metalness={0.25} roughness={0.35} />
     </mesh>
   )
 }
@@ -34,13 +36,17 @@ function Blade() {
 function Hub() {
   return (
     <group>
-      <mesh position={[0, 0, 0]}>
-        <sphereGeometry args={[0.6, 16, 16]} />
-        <meshStandardMaterial color="#c0c0c0" metalness={0.6} roughness={0.3} />
+      <mesh>
+        <sphereGeometry args={[0.7, 20, 20]} />
+        <meshStandardMaterial color="#c8c8c8" metalness={0.6} roughness={0.25} />
       </mesh>
-      <mesh position={[0, 0, 0.3]}>
-        <cylinderGeometry args={[0.35, 0.4, 0.4, 16]} />
-        <meshStandardMaterial color="#a0a0a0" metalness={0.6} roughness={0.3} />
+      <mesh position={[0, 0, 0.35]}>
+        <cylinderGeometry args={[0.4, 0.5, 0.5, 20]} />
+        <meshStandardMaterial color="#b0b0b0" metalness={0.5} roughness={0.3} />
+      </mesh>
+      <mesh position={[0, 0, -0.1]}>
+        <cylinderGeometry args={[0.6, 0.7, 0.2, 20]} />
+        <meshStandardMaterial color="#d0d0d0" metalness={0.5} roughness={0.25} />
       </mesh>
     </group>
   )
@@ -71,37 +77,35 @@ export function WindTurbineModel() {
 
   return (
     <group>
-      <mesh position={[0, 25, 0]}>
+      <mesh position={[0, 25, 0]} castShadow>
         <cylinderGeometry args={[1.5, 2.5, 50, 32]} />
-        <meshStandardMaterial color="#e0e0e0" metalness={0.4} roughness={0.3} />
+        <meshStandardMaterial color="#e4e4e4" metalness={0.35} roughness={0.3} />
       </mesh>
 
-      <mesh position={[0, 51, 0]}>
+      <mesh position={[0, 51, 0]} castShadow>
         <cylinderGeometry args={[1.4, 1.5, 4, 32]} />
-        <meshStandardMaterial color="#d0d0d0" metalness={0.4} roughness={0.3} />
+        <meshStandardMaterial color="#d4d4d4" metalness={0.35} roughness={0.3} />
       </mesh>
 
       <group ref={yawRef} position={[0, 51, 0]}>
-        <mesh position={[0, 0.5, 0]}>
-          <boxGeometry args={[2.5, 2.5, 5]} />
-          <meshStandardMaterial color="#d8d8d8" metalness={0.5} roughness={0.3} />
+        <mesh position={[0, 0.5, 0]} castShadow>
+          <boxGeometry args={[2.6, 2.6, 5.5]} />
+          <meshStandardMaterial color="#dcdcdc" metalness={0.45} roughness={0.3} />
         </mesh>
 
-        <mesh position={[0, 1.8, -0.8]}>
-          <boxGeometry args={[1.2, 0.4, 1.5]} />
-          <meshStandardMaterial color="#c0c0c0" metalness={0.5} roughness={0.3} />
+        <mesh position={[0, 1.9, -1.0]}>
+          <boxGeometry args={[1.3, 0.4, 1.8]} />
+          <meshStandardMaterial color="#c8c8c8" metalness={0.45} roughness={0.3} />
         </mesh>
 
-        <mesh position={[0, 1.8, 1.8]}>
-          <boxGeometry args={[1.2, 0.4, 1.5]} />
-          <meshStandardMaterial color="#c0c0c0" metalness={0.5} roughness={0.3} />
+        <mesh position={[0, 1.9, 2.0]}>
+          <boxGeometry args={[1.3, 0.4, 1.8]} />
+          <meshStandardMaterial color="#c8c8c8" metalness={0.45} roughness={0.3} />
         </mesh>
 
-        <group ref={rotorRef} position={[0, 0.5, 2.8]}>
+        <group ref={rotorRef} position={[0, 0.5, 3.1]}>
           <Hub />
-          <group rotation={[0, 0, 0]}>
-            <Blade />
-          </group>
+          <Blade />
           <group rotation={[0, 0, (2 * Math.PI) / 3]}>
             <Blade />
           </group>
@@ -110,9 +114,9 @@ export function WindTurbineModel() {
           </group>
         </group>
 
-        <mesh position={[0, 1.8, 3.3]}>
-          <cylinderGeometry args={[0.15, 0.15, 1.2, 8]} />
-          <meshStandardMaterial color="#707070" metalness={0.6} roughness={0.3} />
+        <mesh position={[0, 1.9, 3.6]}>
+          <cylinderGeometry args={[0.12, 0.12, 0.8, 8]} />
+          <meshStandardMaterial color="#808080" metalness={0.5} roughness={0.3} />
         </mesh>
       </group>
     </group>

@@ -1,4 +1,5 @@
 import { useTurbineStore } from '../store/useTurbineStore'
+import { TrendChart } from './TrendChart'
 
 export function Dashboard() {
   const powerOutput = useTurbineStore((s) => s.powerOutput)
@@ -47,6 +48,8 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <TrendChart />
 
       <div className="dashboard-card">
         <div className="card-header">

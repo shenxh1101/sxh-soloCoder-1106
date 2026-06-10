@@ -7,34 +7,18 @@ export function ControlPanel() {
   const isStormMode = useTurbineStore((s) => s.isStormMode)
   const isBrakeEngaged = useTurbineStore((s) => s.isBrakeEngaged)
   const isNacelleView = useTurbineStore((s) => s.isNacelleView)
+  const isAutoProtected = useTurbineStore((s) => s.isAutoProtected)
   const setTargetWindSpeed = useTurbineStore((s) => s.setTargetWindSpeed)
   const toggleStormMode = useTurbineStore((s) => s.toggleStormMode)
   const toggleBrake = useTurbineStore((s) => s.toggleBrake)
   const toggleNacelleView = useTurbineStore((s) => s.toggleNacelleView)
   const getRecentPowerData = useTurbineStore((s) => s.getRecentPowerData)
+  const manualReset = useTurbineStore((s) => s.manualReset)
 
   const handleExportCSV = () => {
     const data = getRecentPowerData()
-    if (data.length === 0) {
-      return
-    }
+    if (data.length === 0) return
     exportCSV(data)
-  }
-
-  const handleReset = () => {
-    useTurbineStore.setState({
-      windSpeed: 8,
-      targetWindSpeed: 8,
-      rotorSpeed: 0,
-      powerOutput: 0,
-      totalEnergy: 0,
-      windDirection: 180,
-      yawAngle: 180,
-      isBrakeEngaged: false,
-      isStormMode: false,
-      isNacelleView: false,
-      powerDataHistory: [],
-    })
   }
 
   const handleChangeWindDirection = () => {
@@ -59,7 +43,7 @@ export function ControlPanel() {
             value={targetWindSpeed}
             onChange={(e) => setTargetWindSpeed(parseFloat(e.target.value))}
             className="speed-slider"
-            disabled={isStormMode}
+            disabled={isStormMode || isAutoProtected}
           />
           <div className="speed-range-labels">
             <span>0</span>
@@ -71,6 +55,7 @@ export function ControlPanel() {
           <button
             className={`control-btn storm-btn ${isStormMode ? 'active' : ''}`}
             onClick={toggleStormMode}
+            disabled={isAutoProtected}
             title="风暴模式"
           >
             <Zap size={18} />
@@ -80,7 +65,13 @@ export function ControlPanel() {
           <button
             className={`control-btn brake-btn ${isBrakeEngaged ? 'active' : ''}`}
             onClick={toggleBrake}
-            title={isBrakeEngaged ? '释放刹车' : '刹车'}
+            title={
+              isAutoProtected && isBrakeEngaged
+                ? '保护锁定中，请先复位'
+                : isBrakeEngaged
+                  ? '释放刹车'
+                  : '刹车'
+            }
           >
             <span className="brake-icon">⏹</span>
             <span>{isBrakeEngaged ? '释放刹车' : '刹车'}</span>
@@ -117,11 +108,11 @@ export function ControlPanel() {
 
           <button
             className="control-btn reset-btn"
-            onClick={handleReset}
-            title="重置"
+            onClick={manualReset}
+            title="系统复位"
           >
             <RotateCcw size={18} />
-            <span>重置</span>
+            <span>复位</span>
           </button>
         </div>
       </div>
